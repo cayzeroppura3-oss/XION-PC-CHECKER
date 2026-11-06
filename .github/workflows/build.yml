@@ -5,21 +5,26 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
-      - name: Download repository files
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Package BAT into EXE
         shell: pwsh
         run: |
-          $bat = Join-Path $env:GITHUB_WORKSPACE "XION_PC_CHECK.bat"
-          $exe = Join-Path $env:GITHUB_WORKSPACE "XION_PC_CHECK.exe"
-          $sed = Join-Path $env:RUNNER_TEMP "build.sed"
+          $bat = "$env:GITHUB_WORKSPACE\XION_PC_CHECK.bat"
+          $sed = "$env:RUNNER_TEMP\build.sed"
+          $exe = "$env:RUNNER_TEMP\XION_PC_CHECK.exe"
+          $iexpress = "$env:WINDIR\System32\iexpress.exe"
 
           if (!(Test-Path $bat)) {
-            throw "XION_PC_CHECK.bat not found"
+            throw "BAT file not found"
+          }
+
+          if (!(Test-Path $iexpress)) {
+            throw "IExpress is not installed"
           }
 
           $content = @"
@@ -53,13 +58,18 @@ jobs:
           FILE0="XION_PC_CHECK.bat"
           "@
 
-          Set-Content -Path $sed -Value $content -Encoding ASCII
+          Set-Content $sed $content -Encoding ASCII
 
-          & "$env:WINDIR\System32\iexpress.exe" /N /Q $sed
+          & $iexpress /N /Q $sed
+
+          Write-Host "Checking generated EXE..."
+          Get-ChildItem $env:RUNNER_TEMP -Filter *.exe
 
           if (!(Test-Path $exe)) {
-            throw "EXE build failed"
+            throw "IExpress did not generate the EXE. Check the runner logs."
           }
+
+          Copy-Item $exe "$env:GITHUB_WORKSPACE\XION_PC_CHECK.exe"
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
