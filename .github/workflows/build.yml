@@ -8,24 +8,37 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Build EXE
+      - name: Check BAT file
         shell: pwsh
         run: |
-          $work = "$env:RUNNER_TEMP\XIONBUILD"
-          New-Item -ItemType Directory -Force $work | Out-Null
-
           $bat = "$env:GITHUB_WORKSPACE\XION_PC_CHECK.bat"
 
           if (!(Test-Path $bat)) {
-            throw "BAT file missing"
+            throw "XION_PC_CHECK.bat not found"
           }
+
+          Write-Host "BAT file found!"
+          Get-Item $bat | Format-List Name, Length
+
+      - name: Package BAT into EXE
+        shell: pwsh
+        run: |
+          $work = "$env:RUNNER_TEMP\XIONBUILD"
+          $bat = "$env:GITHUB_WORKSPACE\XION_PC_CHECK.bat"
+          $sed = "$work\build.sed"
+          $exe = "$work\XION_PC_CHECK.exe"
+          $iexpress = "$env:WINDIR\System32\iexpress.exe"
+
+          New-Item -ItemType Directory -Force $work | Out-Null
 
           Copy-Item $bat "$work\XION_PC_CHECK.bat"
 
-          $exe = "$work\XION_PC_CHECK.exe"
-          $sed = "$work\build.sed"
+          if (!(Test-Path $iexpress)) {
+            throw "IExpress not found"
+          }
 
           $content = @"
           [Version]
@@ -58,16 +71,30 @@ jobs:
           FILE0="XION_PC_CHECK.bat"
           "@
 
-          Set-Content $sed $content -Encoding ASCII
+          Set-Content -Path $sed -Value $content -Encoding ASCII
 
-          & "$env:WINDIR\System32\iexpress.exe" /N /Q /M $sed
+          Write-Host "Starting IExpress..."
+
+          $process = Start-Process `
+            -FilePath $iexpress `
+            -ArgumentList "/N", "/Q", "/M", "`"$sed`"" `
+            -Wait `
+            -PassThru
+
+          Write-Host "IExpress exit code: $($process.ExitCode)"
+          Write-Host "Checking output files..."
+
+          Get-ChildItem $work -Force
 
           if (!(Test-Path $exe)) {
-            Get-ChildItem $work -Recurse
-            throw "EXE generation failed"
+            throw "IExpress failed to create XION_PC_CHECK.exe"
           }
 
-      - uses: actions/upload-artifact@v4
+          Write-Host "EXE successfully generated!"
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
         with:
           name: XION-PC-CHECK-EXE
           path: ${{ runner.temp }}/XIONBUILD/XION_PC_CHECK.exe
+          if-no-files-found: error
